@@ -46,12 +46,12 @@
       const dados = snapshot.val();
       if (!dados) return;
       let mudou = false;
-      if (dados.ops     && JSON.stringify(dados.ops)     !== JSON.stringify(STATE.ops))     { STATE.ops     = dados.ops;     mudou = true; }
-      if (dados.profs   && JSON.stringify(dados.profs)   !== JSON.stringify(STATE.profs))   { STATE.profs   = dados.profs;   mudou = true; }
-      if (dados.estoque && JSON.stringify(dados.estoque) !== JSON.stringify(STATE.estoque)) { STATE.estoque = dados.estoque; mudou = true; }
-      if (dados.fin     && JSON.stringify(dados.fin)     !== JSON.stringify(STATE.fin))     { STATE.fin     = dados.fin;     mudou = true; }
-      if (dados.modelos && JSON.stringify(dados.modelos) !== JSON.stringify(STATE.modelos)) { STATE.modelos = dados.modelos; mudou = true; }
-      if (dados.banco   && JSON.stringify(dados.banco)   !== JSON.stringify(STATE.banco))   { STATE.banco   = dados.banco;   mudou = true; }
+      if (dados.ops)     { const v=toArr(dados.ops);     if(JSON.stringify(v)!==JSON.stringify(STATE.ops))     { STATE.ops=v;     mudou=true; } }
+      if (dados.profs)   { const v=toArr(dados.profs);   if(JSON.stringify(v)!==JSON.stringify(STATE.profs))   { STATE.profs=v;   mudou=true; } }
+      if (dados.modelos) { const v=toArr(dados.modelos); if(JSON.stringify(v)!==JSON.stringify(STATE.modelos)) { STATE.modelos=v; mudou=true; } }
+      if (dados.estoque) { const e={...dados.estoque,tecidos:toArr(dados.estoque.tecidos),aviamentos:toArr(dados.estoque.aviamentos),zipers:toArr(dados.estoque.zipers)}; if(JSON.stringify(e)!==JSON.stringify(STATE.estoque)){ STATE.estoque=e; mudou=true; } }
+      if (dados.fin)     { const f={...dados.fin,pagamentos:toArr(dados.fin?.pagamentos)}; if(JSON.stringify(f)!==JSON.stringify(STATE.fin)){ STATE.fin=f; mudou=true; } }
+      if (dados.banco)   { const b={...dados.banco,lancamentos:toArr(dados.banco?.lancamentos),contas:toArr(dados.banco?.contas)}; if(JSON.stringify(b)!==JSON.stringify(STATE.banco)){ STATE.banco=b; mudou=true; } }
       if (mudou && STATE.logado) {
         // Re-renderiza a página atual silenciosamente
         try {
@@ -71,6 +71,13 @@
     update(ref(db, 'dados'), payload).catch(e => console.warn('Firebase save error:', e));
   };
 
+  // Normaliza arrays vindos do Firebase (podem chegar como objetos indexados)
+  function toArr(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(x => x != null);
+    return Object.values(v).filter(x => x != null);
+  }
+
   // Carrega dados do Firebase ao fazer login
   window.fbCarregar = function(cb) {
     if (!window._firebaseReady) { cb && cb(); return; }
@@ -78,12 +85,24 @@
     onValue(r, (snapshot) => {
       const dados = snapshot.val();
       if (dados) {
-        if (dados.ops)     STATE.ops     = dados.ops;
-        if (dados.profs)   STATE.profs   = dados.profs;
-        if (dados.estoque) STATE.estoque = dados.estoque;
-        if (dados.fin)     STATE.fin     = dados.fin;
-        if (dados.modelos) STATE.modelos = dados.modelos;
-        if (dados.banco)   STATE.banco   = dados.banco;
+        if (dados.ops)     STATE.ops     = toArr(dados.ops);
+        if (dados.profs)   STATE.profs   = toArr(dados.profs);
+        if (dados.estoque) {
+          STATE.estoque = dados.estoque;
+          if (dados.estoque.tecidos)    STATE.estoque.tecidos    = toArr(dados.estoque.tecidos);
+          if (dados.estoque.aviamentos) STATE.estoque.aviamentos = toArr(dados.estoque.aviamentos);
+          if (dados.estoque.zipers)     STATE.estoque.zipers     = toArr(dados.estoque.zipers);
+        }
+        if (dados.fin) {
+          STATE.fin = dados.fin;
+          if (dados.fin.pagamentos) STATE.fin.pagamentos = toArr(dados.fin.pagamentos);
+        }
+        if (dados.modelos) STATE.modelos = toArr(dados.modelos);
+        if (dados.banco) {
+          STATE.banco = dados.banco;
+          if (dados.banco.lancamentos) STATE.banco.lancamentos = toArr(dados.banco.lancamentos);
+          if (dados.banco.contas)      STATE.banco.contas      = toArr(dados.banco.contas);
+        }
       } else {
         // Primeira vez: sobe os dados iniciais para o Firebase
         update(ref(db, 'dados'), {
