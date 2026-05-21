@@ -14,6 +14,89 @@
 <link rel="apple-touch-icon" href="icon-192.png"/>
 <title>NLJ — Sistema de Produção</title>
 
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyD-A2gSeBKxY9kCy5ReeLkMbQDndAI9zMY",
+    authDomain: "nlj-producao.firebaseapp.com",
+    databaseURL: "https://nlj-producao-default-rtdb.firebaseio.com",
+    projectId: "nlj-producao",
+    storageBucket: "nlj-producao.firebasestorage.app",
+    messagingSenderId: "876244519962",
+    appId: "1:876244519962:web:ab4a9852a75a6eec3255a3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+  window._db = db;
+  window._dbRef = ref;
+  window._dbSet = set;
+  window._dbUpdate = update;
+  window._dbRemove = remove;
+  window._dbOnValue = onValue;
+  window._firebaseReady = true;
+
+  // ── Sincronização em tempo real ──
+  // Escuta mudanças no Firebase e atualiza STATE automaticamente
+  function escutarFirebase() {
+    onValue(ref(db, 'dados'), (snapshot) => {
+      const dados = snapshot.val();
+      if (!dados) return;
+      let mudou = false;
+      if (dados.ops     && JSON.stringify(dados.ops)     !== JSON.stringify(STATE.ops))     { STATE.ops     = dados.ops;     mudou = true; }
+      if (dados.profs   && JSON.stringify(dados.profs)   !== JSON.stringify(STATE.profs))   { STATE.profs   = dados.profs;   mudou = true; }
+      if (dados.estoque && JSON.stringify(dados.estoque) !== JSON.stringify(STATE.estoque)) { STATE.estoque = dados.estoque; mudou = true; }
+      if (dados.fin     && JSON.stringify(dados.fin)     !== JSON.stringify(STATE.fin))     { STATE.fin     = dados.fin;     mudou = true; }
+      if (dados.modelos && JSON.stringify(dados.modelos) !== JSON.stringify(STATE.modelos)) { STATE.modelos = dados.modelos; mudou = true; }
+      if (dados.banco   && JSON.stringify(dados.banco)   !== JSON.stringify(STATE.banco))   { STATE.banco   = dados.banco;   mudou = true; }
+      if (mudou && STATE.logado) {
+        // Re-renderiza a página atual silenciosamente
+        try {
+          const renders = {ops:renderOPs,profissionais:renderProfissionais,estoque:renderEstoque,financeiro:renderFinanceiro,modelos:renderModelos,banco:renderBanco,dashboard:renderDashboard};
+          if (renders[STATE.page]) renders[STATE.page]();
+          renderSidebarStats();
+        } catch(e) {}
+      }
+    });
+  }
+
+  // Salva todo o STATE no Firebase
+  window.fbSalvar = function(chave) {
+    if (!window._firebaseReady) return;
+    const payload = {};
+    payload[chave] = STATE[chave];
+    update(ref(db, 'dados'), payload).catch(e => console.warn('Firebase save error:', e));
+  };
+
+  // Carrega dados do Firebase ao fazer login
+  window.fbCarregar = function(cb) {
+    if (!window._firebaseReady) { cb && cb(); return; }
+    const r = ref(db, 'dados');
+    onValue(r, (snapshot) => {
+      const dados = snapshot.val();
+      if (dados) {
+        if (dados.ops)     STATE.ops     = dados.ops;
+        if (dados.profs)   STATE.profs   = dados.profs;
+        if (dados.estoque) STATE.estoque = dados.estoque;
+        if (dados.fin)     STATE.fin     = dados.fin;
+        if (dados.modelos) STATE.modelos = dados.modelos;
+        if (dados.banco)   STATE.banco   = dados.banco;
+      } else {
+        // Primeira vez: sobe os dados iniciais para o Firebase
+        update(ref(db, 'dados'), {
+          ops: STATE.ops, profs: STATE.profs, estoque: STATE.estoque,
+          fin: STATE.fin, modelos: STATE.modelos, banco: STATE.banco
+        });
+      }
+      cb && cb();
+      escutarFirebase();
+    }, { onlyOnce: true });
+  };
+</script>
+
 <script>
 // Chart.js stub — gráficos desativados quando offline
 window.Chart = function(ctx, cfg) {
@@ -1002,7 +1085,8 @@ function closeModal() {
 function doLogin() {
   const btn=document.getElementById('li-btn');
   btn.textContent='CARREGANDO...';btn.style.opacity='.7';
-  setTimeout(()=>{
+  STATE.logado = true;
+  const mostrarApp = () => {
     document.getElementById('login-screen').style.display='none';
     const app=document.getElementById('app-shell');
     app.style.display='flex';
@@ -1010,7 +1094,12 @@ function doLogin() {
     app.style.width='100%';
     app.style.height='100vh';
     initApp();
-  },600);
+  };
+  if (window.fbCarregar) {
+    window.fbCarregar(mostrarApp);
+  } else {
+    setTimeout(mostrarApp, 600);
+  }
 }
 
 function doLogout() {
@@ -1691,6 +1780,7 @@ function saveOP(isEdit) {
     STATE.ops.unshift(novo);
     showToast('Nova OP criada!');
   }
+  if(window.fbSalvar) window.fbSalvar('ops');
   closeModal();
   renderOPs();
   renderSidebarStats();
@@ -1700,6 +1790,7 @@ function deleteOP(opCod) {
   if(!confirm(`Tem certeza que deseja remover ${opCod}?`)) return;
   STATE.ops = STATE.ops.filter(o=>o.op!==opCod);
   if(opState.selectedOp===opCod) opState.selectedOp=null;
+  if(window.fbSalvar) window.fbSalvar('ops');
   showToast('OP removida.','error');
   renderOPs();
   renderSidebarStats();
@@ -1880,6 +1971,7 @@ function saveProf(isEdit, id) {
     STATE.profs.push(novo);
     showToast('Profissional cadastrado!');
   }
+  if(window.fbSalvar) window.fbSalvar('profs');
   closeModal();
   renderProfissionais();
   renderSidebarStats();
@@ -1888,6 +1980,7 @@ function saveProf(isEdit, id) {
 function toggleAtivo(id) {
   const p=STATE.profs.find(x=>x.id===id);
   if(p) p.ativo=!p.ativo;
+  if(window.fbSalvar) window.fbSalvar('profs');
   renderProfissionais();
   renderSidebarStats();
 }
@@ -1897,6 +1990,7 @@ function deleteProf(id) {
   if(!p||!confirm(`Tem certeza que deseja remover ${p.nome}?`)) return;
   STATE.profs=STATE.profs.filter(x=>x.id!==id);
   if(profState.selectedId===id) profState.selectedId=null;
+  if(window.fbSalvar) window.fbSalvar('profs');
   showToast('Profissional removido.','error');
   renderProfissionais();
   renderSidebarStats();
@@ -2103,12 +2197,14 @@ function saveTecido() {
   const item={id:estState.target?.id||Date.now(),nome,metros:Number(metros),valor:Number(document.getElementById('ef-valor').value)||0,minimo:Number(document.getElementById('ef-minimo').value)||200};
   if(estState.target){STATE.estoque.tecidos=STATE.estoque.tecidos.map(t=>t.id===item.id?item:t);showToast('Tecido atualizado!');}
   else{STATE.estoque.tecidos.push(item);showToast('Tecido cadastrado!');}
+  if(window.fbSalvar) window.fbSalvar('estoque');
   closeModal();renderEstoque();renderSidebarStats();
 }
 
 function deleteTecido(id) {
   if(!confirm('Remover tecido?')) return;
   STATE.estoque.tecidos=STATE.estoque.tecidos.filter(t=>t.id!==id);
+  if(window.fbSalvar) window.fbSalvar('estoque');
   renderEstoque();renderSidebarStats();
 }
 
@@ -2128,6 +2224,7 @@ function saveAvi() {
   const item={id:estState.target?.id||Date.now(),nome,estoque:Number(document.getElementById('ef-estoque').value)||0,minimo:Number(document.getElementById('ef-minimo').value)||0};
   if(estState.target){STATE.estoque.aviamentos=STATE.estoque.aviamentos.map(a=>a.id===item.id?item:a);showToast('Aviamento atualizado!');}
   else{STATE.estoque.aviamentos.push(item);showToast('Aviamento cadastrado!');}
+  if(window.fbSalvar) window.fbSalvar('estoque');
   closeModal();renderEstoque();renderSidebarStats();
 }
 
@@ -3487,6 +3584,7 @@ function savePag() {
     obs: document.getElementById('fn-obs').value||'',
   };
   STATE.fin.pagamentos.unshift(novo);
+  if(window.fbSalvar) window.fbSalvar('fin');
   showToast(`Pagamento de R$ ${fmt(novo.valor)} para ${prof} registrado!`);
   closeModal(); renderFinanceiro();
 }
@@ -3495,6 +3593,7 @@ function deletePag(id) {
   const pag=STATE.fin.pagamentos.find(p=>p.id===id);
   if(!pag||!confirm(`Tem certeza que deseja remover pagamento de R$ ${fmt(pag.valor)} para ${pag.profissional}?`)) return;
   STATE.fin.pagamentos=STATE.fin.pagamentos.filter(p=>p.id!==id);
+  if(window.fbSalvar) window.fbSalvar('fin');
   renderFinanceiro();
 }
 
@@ -4320,10 +4419,12 @@ function saveModelo(isEdit, id) {
   if(isEdit) {
     const idx = STATE.modelos.findIndex(m=>m.id===id);
     if(idx>=0) STATE.modelos[idx] = {...STATE.modelos[idx], valor};
+    if(window.fbSalvar) window.fbSalvar('modelos');
     showToast('Modelo atualizado!');
   } else {
     if(STATE.modelos.find(m=>m.nome===nome)){ showToast('Modelo já cadastrado.','error'); return; }
     STATE.modelos.push({id:Date.now(), nome, valor});
+    if(window.fbSalvar) window.fbSalvar('modelos');
     showToast('Modelo cadastrado!');
   }
   closeModal(); renderModelos();
@@ -4333,6 +4434,7 @@ function deleteModelo(id) {
   const m = STATE.modelos.find(x=>x.id===id);
   if(!m||!confirm(`Remover modelo "${m.nome}"?`)) return;
   STATE.modelos = STATE.modelos.filter(x=>x.id!==id);
+  if(window.fbSalvar) window.fbSalvar('modelos');
   showToast('Modelo removido.','error');
   renderModelos();
 }
@@ -4883,6 +4985,7 @@ function salvarCateg(id) {
   if(!categ){ showToast('Selecione uma categoria.','error'); return; }
   const l = STATE.banco.lancamentos.find(x=>x.id===id);
   if(l){ l.categ=categ; l.obs=obs; }
+  if(window.fbSalvar) window.fbSalvar('banco');
   showToast('Lançamento categorizado!');
   closeModal(); renderBanco();
 }
@@ -4891,6 +4994,7 @@ function salvarCateg(id) {
 function deleteLanc(id) {
   if(!confirm('Remover este lançamento?')) return;
   STATE.banco.lancamentos = STATE.banco.lancamentos.filter(l=>l.id!==id);
+  if(window.fbSalvar) window.fbSalvar('banco');
   renderBanco();
 }
 
